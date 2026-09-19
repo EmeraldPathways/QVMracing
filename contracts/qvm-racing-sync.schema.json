@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "qvm-racing-sync.v1",
+  "type": "object",
+  "required": ["schemaVersion", "cycleId", "generatedAt", "races", "runners", "quotes", "predictions", "paperPositions", "agentRuns", "heartbeat"],
+  "properties": {
+    "schemaVersion": {"const": "qvm-racing-sync.v1"},
+    "cycleId": {"type": "string", "minLength": 1},
+    "generatedAt": {"type": "string", "format": "date-time"},
+    "races": {"type": "array", "items": {"$ref": "#/$defs/race"}},
+    "runners": {"type": "array", "items": {"$ref": "#/$defs/runner"}},
+    "quotes": {"type": "array", "items": {"$ref": "#/$defs/quote"}},
+    "predictions": {"type": "array", "items": {"$ref": "#/$defs/prediction"}},
+    "paperPositions": {"type": "array"},
+    "agentRuns": {"type": "array"},
+    "heartbeat": {"type": "object", "required": ["workerName", "status", "lastStartedAt", "lastFinishedAt", "lastAttemptedSyncAt"]}
+  },
+  "$defs": {
+    "race": {"type": "object", "required": ["provider", "providerRaceId", "venue", "country", "scheduledOffAt", "surface", "discipline", "distanceMeters", "going", "className", "fieldSize", "status"]},
+    "runner": {"type": "object", "required": ["provider", "raceProviderId", "providerRunnerId", "horseName", "declarationStatus"]},
+    "quote": {"type": "object", "required": ["provider", "raceProviderId", "providerRunnerId", "marketType", "capturedAt", "sourceUpdatedAt", "marketStatus"], "anyOf": [{"required": ["backOdds"]}, {"required": ["layOdds"]}, {"required": ["lastTradedOdds"]}]},
+    "prediction": {"type": "object", "required": ["provider", "raceProviderId", "providerRunnerId", "modelVersion", "probability", "fairOdds", "calculatedAt", "featureSnapshotId"], "properties": {"probability": {"type": "number", "minimum": 0, "maximum": 1}}}
+  }
+}
