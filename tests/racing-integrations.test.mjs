@@ -29,6 +29,25 @@ test("weather endpoint returns the nearest Open-Meteo observation for a race", a
   }
 });
 
+test("weather endpoint falls back to current Open-Meteo data when hourly forecast is unavailable", async () => {
+  const previousFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    if (calls === 1) return new Response(JSON.stringify({ error: true, reason: "temporary upstream limit" }), { status: 429 });
+    return new Response(JSON.stringify({ current: { time: "2026-09-19T15:00", temperature_2m: 18, precipitation: 0, wind_speed_10m: 10, weather_code: 2 } }), { status: 200 });
+  };
+  try {
+    const response = await worker.fetch(new Request("https://racing.test/api/qvm/racing/weather?latitude=51.41&longitude=0.11&raceTime=2026-09-20T10:00:00Z"), { ASSETS: assets });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.fallback, "current");
+    assert.equal(body.observation.temperature_2m, 18);
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
 test("fixtures endpoint normalizes The Racing API racecards without exposing credentials", async () => {
   const previousFetch = globalThis.fetch;
   globalThis.fetch = async (request, init) => {
