@@ -17,7 +17,7 @@ function queryParams(values) {
 }
 
 async function fetchJson(url, init = {}) {
-  const response = await fetch(url, { ...init, headers: { accept: "application/json", ...(init.headers || {}) } });
+  const response = await fetch(url, { ...init, headers: { accept: "application/json", "user-agent": "QVM-Racing-Workbench/1.0", ...(init.headers || {}) } });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
     const error = new Error(body.detail || body.error || `Upstream request failed (${response.status})`);
