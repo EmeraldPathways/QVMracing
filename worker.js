@@ -125,7 +125,15 @@ async function api(request, env) {
     return json({ provider: "the-racing-api", mode: "upcoming", total: payload.total || 0, fixtures: (payload.racecards || []).map(normalizeRacingCard), capturedAt: now() });
   }
   if (url.pathname === "/api/qvm/racing/history" && request.method === "GET") {
-    const payload = await racingApiRequest(env, "/v1/results", { start_date: url.searchParams.get("startDate"), end_date: url.searchParams.get("endDate"), region: (url.searchParams.get("regions") || "gb,ire").split(",").filter(Boolean), limit: 100 });
+    const startDate = url.searchParams.get("startDate");
+    const endDate = url.searchParams.get("endDate");
+    const regions = (url.searchParams.get("regions") || "gb,ire").split(",").filter(Boolean);
+    let payload = await racingApiRequest(env, "/v1/results", { start_date: startDate, end_date: endDate, region: regions, limit: 100 });
+    const today = new Date().toISOString().slice(0, 10);
+    if (payload instanceof Response && payload.status >= 500 && endDate === today) {
+      payload = await racingApiRequest(env, "/v1/results/today/free", { region: regions, limit: 100 });
+      if (!(payload instanceof Response)) return json({ provider: "the-racing-api", mode: "today-free", historicalAvailable: false, notice: "Historical results require a Racing API Standard plan; today's free results feed is available.", total: payload.total || 0, results: payload.results || [], capturedAt: now() });
+    }
     if (payload instanceof Response) return payload;
     return json({ provider: "the-racing-api", mode: "historical", total: payload.total || 0, results: payload.results || [], capturedAt: now() });
   }
