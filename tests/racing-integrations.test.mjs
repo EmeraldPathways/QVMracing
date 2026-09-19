@@ -95,3 +95,23 @@ test("history endpoint requests date-bounded results for walk-forward research",
     globalThis.fetch = previousFetch;
   }
 });
+
+test("history endpoint falls back to the free same-day results feed when historical access is not included", async () => {
+  const previousFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async (request) => {
+    calls += 1;
+    if (calls === 1) return new Response(JSON.stringify({ detail: "Standard Plan required" }), { status: 403 });
+    assert.match(String(request), /api\.theracingapi\.com\/v1\/results\/today\/free/);
+    return new Response(JSON.stringify({ results: [{ race_id: "rac_today", date: "2026-09-19", course: "Ayr" }], total: 1 }), { status: 200 });
+  };
+  try {
+    const response = await worker.fetch(new Request("https://racing.test/api/qvm/racing/history?startDate=2026-09-19&endDate=2026-09-19"), { RACING_API_USERNAME: "test", RACING_API_PASSWORD: "secret", ASSETS: assets });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.mode, "today-free");
+    assert.equal(body.results[0].race_id, "rac_today");
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
