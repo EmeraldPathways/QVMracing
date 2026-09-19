@@ -20,7 +20,7 @@ async function fetchJson(url, init = {}) {
   const response = await fetch(url, { ...init, headers: { accept: "application/json", "user-agent": "QVM-Racing-Workbench/1.0", ...(init.headers || {}) } });
   const body = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const error = new Error(body.detail || body.error || `Upstream request failed (${response.status})`);
+    const error = new Error(body.reason || body.detail || body.error || `Upstream request failed (${response.status})`);
     error.status = response.status;
     throw error;
   }
@@ -53,8 +53,15 @@ async function openMeteoWeather(url) {
   const endpoint = isHistorical ? "https://archive-api.open-meteo.com/v1/archive" : "https://api.open-meteo.com/v1/forecast";
   const date = raceTime.slice(0, 10);
   const params = queryParams({ latitude, longitude, hourly: WEATHER_HOURLY, timezone: "UTC", ...(isHistorical ? { start_date: date, end_date: date } : { forecast_days: 2 }) });
-  const payload = await fetchJson(`${endpoint}?${params}`);
-  return json({ provider: "open-meteo", mode: isHistorical ? "historical" : "forecast", latitude, longitude, raceTime, observation: nearestHourlyObservation(payload.hourly, raceTime), source: payload });
+  try {
+    const payload = await fetchJson(`${endpoint}?${params}`);
+    return json({ provider: "open-meteo", mode: isHistorical ? "historical" : "forecast", latitude, longitude, raceTime, observation: nearestHourlyObservation(payload.hourly, raceTime), source: payload });
+  } catch (error) {
+    if (isHistorical) throw error;
+    const currentParams = queryParams({ latitude, longitude, current: "temperature_2m,relative_humidity_2m,precipitation,wind_speed_10m,wind_direction_10m,weather_code", timezone: "UTC" });
+    const current = await fetchJson(`https://api.open-meteo.com/v1/forecast?${currentParams}`);
+    return json({ provider: "open-meteo", mode: "forecast", fallback: "current", latitude, longitude, raceTime, observation: { time: current.current?.time, ...current.current }, source: current });
+  }
 }
 
 function racingApiAuth(env) {
