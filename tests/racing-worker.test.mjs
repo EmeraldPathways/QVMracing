@@ -1,8 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import worker from "../worker.js";
+import worker, { database } from "../worker.js";
 
 const env = { QVM_RACING_WORKER_SHARED_SECRET: "test-secret", ASSETS: { fetch: () => new Response("not found", { status: 404 }) } };
+
+test("hosted Sites D1 binding is resolved from hosting.json binding name", () => {
+  const binding = { prepare: () => null };
+  assert.equal(database({ "qvm-racing": binding }), binding);
+});
 
 test("racing worker exposes overview and scan endpoints", async () => {
   const overview = await worker.fetch(new Request("https://racing.test/api/qvm/racing/overview"), env);
@@ -108,6 +113,25 @@ test("hosted OpenAI route extracts text from a structured Responses API payload"
     }), { OPENAI_API_KEY: "test-key", OPENAI_MODEL: "gpt-5.6-luna", OPENAI_REASONING_EFFORT: "medium", ASSETS: { fetch: () => new Response("not found", { status: 404 }) } });
     assert.equal(response.status, 200);
     assert.equal((await response.json()).answer, "Structured hosted answer");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("hosted OpenAI route handles alternate text blocks and empty output", async () => {
+  const originalFetch = globalThis.fetch;
+  const responses = [
+    { output: [{ type: "message", content: [{ type: "text", text: "Alternate hosted answer" }] }] },
+    { output: [{ type: "reasoning", summary: [{ type: "summary_text", text: "Reasoning only" }] }] }
+  ];
+  globalThis.fetch = async () => new Response(JSON.stringify(responses.shift()), { status: 200, headers: { "content-type": "application/json" } });
+  try {
+    const first = await worker.fetch(new Request("https://racing.test/api/qvm/racing/ai", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message: "Explain the race." }) }), { OPENAI_API_KEY: "test-key", OPENAI_MODEL: "gpt-5.6-luna", OPENAI_REASONING_EFFORT: "medium", ASSETS: { fetch: () => new Response("not found", { status: 404 }) } });
+    assert.equal((await first.json()).answer, "Alternate hosted answer");
+    const second = await worker.fetch(new Request("https://racing.test/api/qvm/racing/ai", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ message: "Explain the race." }) }), { OPENAI_API_KEY: "test-key", OPENAI_MODEL: "gpt-5.6-luna", OPENAI_REASONING_EFFORT: "medium", ASSETS: { fetch: () => new Response("not found", { status: 404 }) } });
+    const fallback = await second.json();
+    assert.match(fallback.answer, /Server evidence captured/);
+    assert.equal(fallback.context.answerSource, "server-evidence-fallback");
   } finally {
     globalThis.fetch = originalFetch;
   }

@@ -29,7 +29,7 @@ export function clearIrishRacingPageCache() {
 const candidate = { runnerId: "demo:horse:1", runner: "Alpha Meridian", venue: "Kempton 14:20", odds: 3.55, probability: .34, edge: .172, quoteAgeSeconds: 24, dataQuality: 95, action: "PAPER_CANDIDATE" };
 const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: JSON_HEADERS });
 const now = () => new Date().toISOString();
-const database = (env) => env?.QVM_RACING_DB;
+export const database = (env) => env?.QVM_RACING_DB || env?.["qvm-racing"] || env?.QVM_RACING;
 const WEATHER_HOURLY = "temperature_2m,relative_humidity_2m,precipitation,wind_speed_10m,wind_direction_10m,weather_code";
 
 function queryParams(values) {
@@ -887,17 +887,47 @@ async function openAiAnswer(request, env, visitorId = DEFAULT_VISITOR_ID) {
         { role: "system", content: "You are the QVM Racing Workbench assistant. Use only the server evidence packet supplied with the user's question. Distinguish live fixture feed data from stored database quote snapshots, cite the captured timestamp and source in your explanation, and say when odds are missing, stale, incomplete, or unavailable. You may analyse paper decisions and risk gates, but never place or imply a live bet and never invent prices, runners, fixtures, or probabilities." },
         { role: "user", content: `Question:\n${message}\n\nServer evidence packet (JSON):\n${JSON.stringify(evidence)}` }
       ],
-      max_output_tokens: 500
+      max_output_tokens: 1200
     })
   }, 30000);
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) return json({ error: "OPENAI_UNAVAILABLE", message: payload.error?.message || `OpenAI request failed (${response.status})` }, 503);
-  const structuredText = (payload.output || [])
-    .flatMap((item) => item.content || [])
-    .filter((item) => item.type === "output_text" && item.text)
-    .map((item) => item.text)
-    .join("\n");
-  return json({ provider: "openai", model, reasoningEffort, answer: payload.output_text || structuredText || "OpenAI returned no text.", context: contextSummary });
+  const answer = extractOpenAiText(payload) || deterministicEvidenceSummary(evidence);
+  return json({ provider: "openai", model, reasoningEffort, answer, context: { ...contextSummary, answerSource: extractOpenAiText(payload) ? "openai" : "server-evidence-fallback" } });
+}
+
+export function extractOpenAiText(payload = {}) {
+  const direct = typeof payload.output_text === "string" ? payload.output_text.trim() : "";
+  if (direct) return direct;
+  const texts = [];
+  const collect = (value) => {
+    if (!value) return;
+    if (Array.isArray(value)) return value.forEach(collect);
+    if (typeof value !== "object") return;
+    if (typeof value.text === "string" && value.text.trim()) texts.push(value.text.trim());
+    if (value.content) collect(value.content);
+  };
+  collect(payload.output);
+  return [...new Set(texts)].join("\n");
+}
+
+function deterministicEvidenceSummary(evidence = {}) {
+  const fixtures = evidence.liveFixtureFeed?.fixtures || [];
+  const decisions = fixtures.map((fixture) => fixture.paperDecision || fixture.decisionContract).filter(Boolean);
+  const candidates = decisions.filter((decision) => decision.decision?.status === "PAPER_CANDIDATE");
+  const reasons = [...new Set(decisions.flatMap((decision) => decision.decision?.reasons || []))].slice(0, 5);
+  const sources = [...new Set(fixtures.map((fixture) => {
+    const quote = fixture.paperDecision?.quote || fixture.decisionContract?.quote;
+    return quote?.provider && quote?.capturedAt ? `${quote.provider} as of ${quote.capturedAt}` : null;
+  }).filter(Boolean))].slice(0, 4);
+  const lines = [
+    `Server evidence captured at ${evidence.capturedAt || "an unavailable time"}.`,
+    `${fixtures.length} live fixture${fixtures.length === 1 ? "" : "s"} were supplied to the assistant.`,
+    candidates.length ? `${candidates.length} fixture decision${candidates.length === 1 ? "" : "s"} passed the deterministic paper gates.` : "No fixture decision passed every deterministic paper gate.",
+    reasons.length ? `Observed gate reasons include ${reasons.join(", ")}.` : "No gate reason was returned.",
+    sources.length ? `Recorded quote sources: ${sources.join("; ")}.` : "No stored quote source and as-of timestamp was available."
+  ];
+  return lines.join(" ");
 }
 
 async function overview(env, visitorId = DEFAULT_VISITOR_ID) {
