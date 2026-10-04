@@ -161,6 +161,26 @@ test("fixtures endpoint falls back to free cards when the odds plan is unavailab
   }
 });
 
+test("free-feed fallback labels a card by its scheduled UTC date", async () => {
+  const previousFetch = globalThis.fetch;
+  const today = new Date().toISOString().slice(0, 10);
+  let calls = 0;
+  globalThis.fetch = async (request) => {
+    calls += 1;
+    if (calls === 1) return new Response(JSON.stringify({ message: "Standard plan required" }), { status: 503 });
+    assert.match(String(request), /api\.theracingapi\.com\/v1\/racecards\/free/);
+    return new Response(JSON.stringify({ racecards: [{ race_id: "free_today_1", course: "Ayr", region: "GB", off_dt: `${today}T23:59:00Z`, runners: [{ horse_id: "free_today_horse_1", horse: "Free Today Alpha" }, { horse_id: "free_today_horse_2", horse: "Free Today Beta" }] }], total: 1 }), { status: 200, headers: { "content-type": "application/json" } });
+  };
+  try {
+    const response = await worker.fetch(new Request("https://racing.test/api/qvm/racing/fixtures?day=tomorrow&regions=gb"), { RACING_API_USERNAME: "test", RACING_API_PASSWORD: "secret", ASSETS: assets });
+    assert.equal(response.status, 200);
+    const body = await response.json();
+    assert.equal(body.fixtures[0].fixtureDay, "today");
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
 test("fixtures endpoint fails clearly when Racing API credentials are absent", async () => {
   const response = await worker.fetch(new Request("https://racing.test/api/qvm/racing/fixtures"), { ASSETS: assets });
   assert.equal(response.status, 503);

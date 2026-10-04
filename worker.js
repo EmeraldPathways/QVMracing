@@ -186,6 +186,15 @@ function racingApiAuth(env) {
   return `Basic ${btoa(`${env.RACING_API_USERNAME}:${env.RACING_API_PASSWORD}`)}`;
 }
 
+function fixtureDayForScheduledOff(scheduledOffAt, requestedDay) {
+  const parsed = new Date(scheduledOffAt || "");
+  if (Number.isNaN(parsed.getTime())) return requestedDay;
+  const today = new Date().toISOString().slice(0, 10);
+  const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const scheduledDate = parsed.toISOString().slice(0, 10);
+  return scheduledDate === today ? "today" : scheduledDate === tomorrow ? "tomorrow" : requestedDay;
+}
+
 async function racingApiRequest(env, path, values) {
   const authorization = racingApiAuth(env);
   if (!authorization) return json({ error: "RACING_API_NOT_CONFIGURED", message: "Add RACING_API_USERNAME and RACING_API_PASSWORD to enable live fixtures and historical results." }, 503);
@@ -210,10 +219,11 @@ function providerOdds(runner = {}) {
 function normalizeRacingCard(card, fixtureDay = null) {
   const providerRaceId = String(card.race_id || stableEvidenceId("race", ["the-racing-api", card.course, card.region, card.off_dt || card.date, card.off_time]));
   const rawRunners = Array.isArray(card.runners) ? card.runners : [];
+  const scheduledOffAt = card.off_dt || `${card.date}T${card.off_time || "00:00"}:00`;
   return {
     provider: "the-racing-api", providerRaceId, venue: card.course, country: card.region,
-    scheduledOffAt: card.off_dt || `${card.date}T${card.off_time || "00:00"}:00`, distance: card.distance_round, distanceMeters: Number(card.distance_meters || card.distance) || null,
-    fixtureDay, raceName: card.race_name || card.raceName || card.name || card.title || null,
+    scheduledOffAt, distance: card.distance_round, distanceMeters: Number(card.distance_meters || card.distance) || null,
+    fixtureDay: fixtureDayForScheduledOff(scheduledOffAt, fixtureDay), raceName: card.race_name || card.raceName || card.name || card.title || null,
     discipline: card.discipline || "FLAT", className: card.class || card.class_name || null, going: card.going, surface: card.surface, fieldSize: Number(card.field_size) || (card.runners || []).length,
     status: card.is_abandoned ? "ABANDONED" : String(card.race_status || "SCHEDULED").toUpperCase(),
     sourceWeather: card.weather || null,
