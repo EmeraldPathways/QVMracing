@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qvm-racing-workbench.example/contracts/qvm-racing-decision.v2.schema.json",
+  "title": "QVM Racing server-owned decision contract",
+  "type": "object",
+  "required": ["contractVersion", "race", "runner", "decision", "gates", "paperAction", "quote", "source", "capturedAt", "modelVersion"],
+  "properties": {
+    "contractVersion": { "const": "qvm-racing-decision.v2" },
+    "decisionId": { "type": ["string", "null"] },
+    "race": {
+      "type": "object",
+      "required": ["raceId", "venue", "scheduledOffAt", "status"],
+      "properties": {
+        "raceId": { "type": "string" },
+        "venue": { "type": ["string", "null"] },
+        "scheduledOffAt": { "type": ["string", "null"], "format": "date-time" },
+        "status": { "type": "string" }
+      }
+    },
+    "runner": { "type": "object" },
+    "decision": {
+      "type": "object",
+      "required": ["status", "reasons", "gates"],
+      "properties": {
+        "status": { "enum": ["PAPER_CANDIDATE", "ABSTAIN"] },
+        "reasons": { "type": "array", "items": { "type": "string" } },
+        "gates": { "type": "object" }
+      }
+    },
+    "gates": { "type": "object" },
+    "paperAction": {
+      "type": "object",
+      "required": ["enabled", "label"],
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "label": { "enum": ["PAPER CANDIDATE", "ABSTAIN"] }
+      }
+    },
+    "quote": { "type": ["object", "null"] },
+    "source": { "type": "string" },
+    "capturedAt": { "type": "string", "format": "date-time" },
+    "modelVersion": { "type": "string" },
+    "quoteAgeSeconds": { "type": ["number", "null"], "minimum": 0 }
+  }
+}

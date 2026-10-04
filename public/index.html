@@ -10,25 +10,32 @@
 </head>
 <body>
   <div class="app-shell">
-    <aside class="sidebar">
-      <div class="brand"><span class="brand-mark">Q</span><span>QVM <strong>Racing</strong></span></div>
+    <aside class="sidebar" aria-label="Application sidebar">
+      <div class="sidebar-topline">
+        <div class="brand"><span class="brand-mark">Q</span><span class="brand-copy">QVM <strong>Racing</strong></span></div>
+        <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-label="Collapse sidebar" aria-expanded="true" title="Collapse sidebar">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 6 9 12l6 6M9 12h10"/></svg>
+        </button>
+      </div>
       <div class="paper-badge"><span></span> PAPER ONLY</div>
       <nav aria-label="Primary navigation">
-        <button class="nav-item active" data-view="dashboard">Dashboard</button>
-        <button class="nav-item" data-view="races">Race Finder</button>
-        <button class="nav-item" data-view="positions">Paper Positions</button>
-        <button class="nav-item" data-view="performance">Performance</button>
-        <button class="nav-item" data-view="research">Research</button>
-        <button class="nav-item" data-view="agents">Agents</button>
-        <button class="nav-item" data-view="settings">Settings</button>
+        <button class="nav-item active" data-view="dashboard" title="Dashboard"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m4 11 8-7 8 7v9H4zM9 20v-6h6v6"/></svg><span class="nav-label">Dashboard</span></button>
+        <button class="nav-item" data-view="races" title="Race Finder"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19h16M6 16l4-8 3 5 2-3 3 6M5 5h.01M19 5h.01"/></svg><span class="nav-label">Race Finder</span></button>
+        <button class="nav-item" data-view="results" title="Results"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v16H5zM8 8h8M8 12h5M8 16h8"/></svg><span class="nav-label">Results</span></button>
+        <button class="nav-item" data-view="positions" title="Paper Positions"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h10v18H7zM10 7h4M10 11h4M10 15h4"/></svg><span class="nav-label">Paper Positions</span></button>
+        <button class="nav-item" data-view="performance" title="Performance"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5M4 19h16M8 15l3-4 3 2 5-7"/></svg><span class="nav-label">Performance</span></button>
+        <button class="nav-item" data-view="research" title="Research"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="5.5"/><path d="m15 15 5 5M8 10.5h5M10.5 8v5"/></svg><span class="nav-label">Research</span></button>
+        <button class="nav-item" data-view="agents" title="Agents"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="7" width="14" height="12" rx="3"/><path d="M9 7V5h6v2M8 12h.01M16 12h.01M9 16h6"/></svg><span class="nav-label">Agents</span></button>
+        <button class="nav-item" data-view="settings" title="Settings"><svg class="nav-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8Z"/><path d="m19 13 1.5 1-2 3-1.7-.7a8 8 0 0 1-1.8 1l-.3 1.8h-4l-.3-1.8a8 8 0 0 1-1.8-1l-1.7.7-2-3L6.5 13a8 8 0 0 1 0-2L5 10l2-3 1.7.7a8 8 0 0 1 1.8-1l.3-1.8h4l.3 1.8a8 8 0 0 1 1.8 1L18 7l2 3-1.5 1a8 8 0 0 1 0 2Z"/></svg><span class="nav-label">Settings</span></button>
       </nav>
-      <div class="sidebar-foot"><span class="health-dot"></span><span>Demo provider healthy</span></div>
+      <div class="sidebar-foot"><span class="health-dot"></span><span class="sidebar-foot-copy">Demo provider healthy</span></div>
     </aside>
     <main class="main">
       <header class="topbar">
-        <div><p class="eyebrow">Decision-quality control room</p><h1>QVM Racing Workbench</h1></div>
-        <div class="top-actions"><span class="utc">UTC <strong id="clock">--:--:--</strong></span><button class="refresh" id="refreshBtn">Refresh demo data</button></div>
+        <div class="topbar-heading"><button class="mobile-sidebar-toggle" id="mobileSidebarToggle" type="button" aria-label="Open navigation" aria-expanded="false" title="Open navigation"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button><div><p class="eyebrow">Decision-quality control room</p><h1>QVM Racing Workbench</h1></div></div>
+        <div class="top-actions"><span class="utc">UTC <strong id="clock">--:--:--</strong></span><span class="odds-refresh-status" data-odds-refresh-status aria-live="polite">Auto odds load on refresh</span><button class="refresh" id="refreshOddsBtn" type="button" aria-label="Refresh Irishracing odds"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14.9-3M4 5v4h4M4 13a8 8 0 0 0 14.9 3M20 19v-4h-4"/></svg> Refresh Irishracing odds</button><button class="refresh" id="refreshBtn" type="button">Refresh live evidence</button></div>
       </header>
+      <div id="statusRegion" class="sr-only" aria-live="polite" aria-atomic="true"></div>
       <div id="app" class="content"></div>
     </main>
   </div>

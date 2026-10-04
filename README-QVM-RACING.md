@@ -1,6 +1,6 @@
 # QVM Racing Workbench
 
-The first build slice is a private, paper-only horse-racing research workbench using deterministic demo data. It is intentionally separate from QVM Football Workbench.
+QVM Racing Workbench is a public, paper-only horse-racing research workbench with evidence-first decision gates. It is intentionally separate from QVM Football Workbench.
 
 ## Current boundary
 
@@ -12,6 +12,10 @@ The first build slice is a private, paper-only horse-racing research workbench u
 - External integrations use a vendor-neutral read-only provider boundary and never place orders.
 - Dynamic quote freshness is visible in the UI and near-off data is fail-closed.
 - `AUTO_PAPER_TRADES` is off by default.
+- Market overround, no-vig probabilities, expected value, uncertainty gates, and closing-line value are calculated server-side.
+- Paper positions are linked to server-owned decision snapshots with model version and source timestamps.
+- Performance reports Brier score, log loss, calibration bins, drawdown, and sample sufficiency.
+- The web app does not claim a live edge when runner-level odds snapshots are incomplete; those candidates are labelled demo or insufficient data.
 
 ## Data requirements
 
@@ -19,11 +23,11 @@ The first build slice is a private, paper-only horse-racing research workbench u
 - Historical race results are required for form features, calibration, walk-forward backtesting, and honest performance reporting.
 - Historical weather should be joined to completed races by venue coordinates and scheduled-off time, using only data available at the relevant timestamp.
 
-The hosted Worker exposes `/api/qvm/racing/fixtures`, `/api/qvm/racing/history`, `/api/qvm/racing/weather`, and `/api/qvm/racing/integrations`. Credentials are server-side only; when absent, the UI clearly remains on demo fallback.
+The hosted Site exposes `/api/qvm/racing/fixtures`, `/api/qvm/racing/history`, `/api/qvm/racing/weather`, `/api/qvm/racing/integrations`, `/api/qvm/racing/decision`, `/api/qvm/racing/snapshots`, `/api/qvm/racing/market-movement`, `/api/qvm/racing/paper-positions`, `/api/qvm/racing/performance`, and `/api/qvm/racing/ai`. Credentials are server-side only; when absent, the UI clearly remains on limited fallback. No Windows worker, bridge, or local process is required.
 
 ## Next implementation stages
 
 1. Add the racing-only persistence and versioned sync contract.
 2. Add provider adapters, as-of feature construction, model calibration, paper ledger, and settlement.
-3. Add the hosted API and worker sync route with separate racing secrets.
+3. Add the hosted API, hosted OpenAI assistant, and database-backed paper ledger with separate server-side secrets.
 4. Add chronological backtesting and model-card reporting.
