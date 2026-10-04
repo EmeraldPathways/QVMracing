@@ -203,6 +203,7 @@ async function loadData({ refresh = false, view = state.view } = {}) {
     else state[key] = body;
   });
   if (responses.every((result) => result.status === 'rejected')) state.error = 'The hosted data service is unavailable.';
+  syncDecisionFromFixtures();
   if (shouldLoadCore && responses.some((result) => result.status === 'fulfilled')) state.loaded.core = true;
   if (responses.some((result) => result.status === 'fulfilled')) state.loaded[view] = true;
   state.loading = false;
@@ -227,6 +228,22 @@ function autoIrishRacingRace(race) {
   return Boolean(raceIdFor(race) && race?.venue && race?.runners?.length >= 2 && Number.isFinite(scheduled) && scheduled > Date.now());
 }
 
+function syncDecisionFromFixtures() {
+  const withDecisions = state.races.filter((race) => race?.paperDecision);
+  if (!withDecisions.length) return;
+  const ordered = [...withDecisions].sort((left, right) => {
+    const leftTime = Date.parse(left.scheduledOffAt || left.scheduled_off_at || '');
+    const rightTime = Date.parse(right.scheduledOffAt || right.scheduled_off_at || '');
+    const leftFuture = Number.isFinite(leftTime) && leftTime > Date.now();
+    const rightFuture = Number.isFinite(rightTime) && rightTime > Date.now();
+    if (leftFuture !== rightFuture) return leftFuture ? -1 : 1;
+    if (!Number.isFinite(leftTime)) return 1;
+    if (!Number.isFinite(rightTime)) return -1;
+    return leftTime - rightTime;
+  });
+  state.decision = ordered[0].paperDecision;
+}
+
 function applyIrishRacingBatch(body) {
   const items = Array.isArray(body?.items) ? body.items : [];
   const byRaceId = new Map(items.map((item) => [String(item.raceId), item]));
@@ -249,6 +266,7 @@ function applyIrishRacingBatch(body) {
     return loadedRace;
   });
   state.quotes = [...items.map((item) => item.quote), ...state.quotes.filter((quote) => !loadedIds.has(String(field(quote, 'raceId', 'race_id'))))];
+  syncDecisionFromFixtures();
 }
 
 async function refreshIrishRacingOdds({ auto = false } = {}) {
