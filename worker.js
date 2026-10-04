@@ -13,6 +13,8 @@ const IRISHRACING_CARD_TTL_MS = 30_000;
 const IRISHRACING_BATCH_TTL_MS = 15_000;
 const irishRacingBatchCache = new Map();
 const aiRequestTimes = new Map();
+const schemaReady = new WeakSet();
+const schemaPromises = new WeakMap();
 const DEFAULT_VISITOR_ID = "anonymous";
 
 function visitorIdFromRequest(request) {
@@ -227,42 +229,53 @@ function normalizeRacingCard(card, fixtureDay = null) {
 async function ensureSchema(env) {
   const db = database(env);
   if (!db) return false;
-  await db.batch([
-    db.prepare("CREATE TABLE IF NOT EXISTS racing_paper_positions (id TEXT PRIMARY KEY, runner_id TEXT NOT NULL, runner TEXT NOT NULL, venue TEXT NOT NULL, odds REAL NOT NULL, probability REAL NOT NULL, stake REAL NOT NULL, status TEXT NOT NULL, outcome TEXT, pnl REAL, created_at TEXT NOT NULL)"),
-    db.prepare("CREATE TABLE IF NOT EXISTS racing_decision_snapshots (id TEXT PRIMARY KEY, runner_id TEXT NOT NULL, runner TEXT NOT NULL, venue TEXT NOT NULL, odds REAL NOT NULL, model_probability REAL NOT NULL, market_probability REAL, data_quality REAL, quote_age_seconds REAL, model_version TEXT NOT NULL, decision_json TEXT NOT NULL, close_odds REAL, outcome TEXT, created_at TEXT NOT NULL)"),
-    db.prepare("CREATE TABLE IF NOT EXISTS racing_quote_snapshots (id TEXT PRIMARY KEY, race_id TEXT NOT NULL, provider TEXT NOT NULL, captured_at TEXT NOT NULL, source_updated_at TEXT, complete_book INTEGER NOT NULL, content_json TEXT NOT NULL, created_at TEXT NOT NULL, venue TEXT, scheduled_off_at TEXT)"),
-    db.prepare("CREATE TABLE IF NOT EXISTS racing_research_notes (id TEXT PRIMARY KEY, race_id TEXT NOT NULL, runner_id TEXT, note TEXT NOT NULL, created_at TEXT NOT NULL)"),
-    db.prepare("CREATE TABLE IF NOT EXISTS racing_saved_filters (id TEXT PRIMARY KEY, name TEXT NOT NULL, filter_json TEXT NOT NULL, created_at TEXT NOT NULL)"),
-    db.prepare("CREATE TABLE IF NOT EXISTS racing_alerts (id TEXT PRIMARY KEY, kind TEXT NOT NULL, title TEXT NOT NULL, message TEXT NOT NULL, status TEXT NOT NULL, created_at TEXT NOT NULL)"),
-    db.prepare("CREATE TABLE IF NOT EXISTS racing_provider_health (id TEXT PRIMARY KEY, provider TEXT NOT NULL, status TEXT NOT NULL, latency_ms REAL, message TEXT, checked_at TEXT NOT NULL)"),
-    db.prepare("CREATE TABLE IF NOT EXISTS racing_import_jobs (id TEXT PRIMARY KEY, kind TEXT NOT NULL, accepted INTEGER NOT NULL, rejected INTEGER NOT NULL, errors_json TEXT NOT NULL, created_at TEXT NOT NULL)"),
-    db.prepare("CREATE TABLE IF NOT EXISTS racing_results (id TEXT PRIMARY KEY, race_id TEXT NOT NULL, result_json TEXT NOT NULL, captured_at TEXT NOT NULL)"),
-    db.prepare("CREATE TABLE IF NOT EXISTS racing_watchlist (race_id TEXT PRIMARY KEY, label TEXT, active INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)"),
-    db.prepare("CREATE TABLE IF NOT EXISTS racing_visitor_watchlist (visitor_id TEXT NOT NULL, race_id TEXT NOT NULL, label TEXT, active INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY (visitor_id, race_id))"),
-    db.prepare("CREATE TABLE IF NOT EXISTS racing_race_lifecycle (race_id TEXT PRIMARY KEY, status TEXT NOT NULL, reason TEXT, updated_at TEXT NOT NULL)"),
-    db.prepare("CREATE TABLE IF NOT EXISTS racing_settings (key TEXT PRIMARY KEY, value_json TEXT NOT NULL, updated_at TEXT NOT NULL)"),
-  ]);
-  try { await db.prepare("ALTER TABLE racing_paper_positions ADD COLUMN snapshot_id TEXT").run(); } catch { /* column already exists */ }
-  try { await db.prepare("ALTER TABLE racing_paper_positions ADD COLUMN visitor_id TEXT NOT NULL DEFAULT 'anonymous'").run(); } catch { /* column already exists */ }
-  await db.batch([
-    db.prepare("CREATE INDEX IF NOT EXISTS idx_racing_paper_positions_visitor_created ON racing_paper_positions(visitor_id, created_at)"),
-    db.prepare("CREATE INDEX IF NOT EXISTS idx_racing_quotes_race_captured ON racing_quote_snapshots(race_id, captured_at)"),
-  ]);
-  for (const statement of [
-    "ALTER TABLE racing_quote_snapshots ADD COLUMN venue TEXT",
-    "ALTER TABLE racing_quote_snapshots ADD COLUMN scheduled_off_at TEXT",
-    "ALTER TABLE racing_paper_positions ADD COLUMN race_id TEXT",
-    "ALTER TABLE racing_paper_positions ADD COLUMN segment TEXT",
-    "ALTER TABLE racing_paper_positions ADD COLUMN close_odds REAL",
-    "ALTER TABLE racing_paper_positions ADD COLUMN commission REAL DEFAULT 0.2",
-    "ALTER TABLE racing_paper_positions ADD COLUMN data_quality REAL",
-    "ALTER TABLE racing_paper_positions ADD COLUMN slippage REAL",
-  ]) { try { await db.prepare(statement).run(); } catch { /* column already exists */ } }
-  for (const statement of [
-    "ALTER TABLE racing_decision_snapshots ADD COLUMN data_cutoff_at TEXT",
-    "ALTER TABLE racing_decision_snapshots ADD COLUMN provenance_json TEXT",
-  ]) { try { await db.prepare(statement).run(); } catch { /* column already exists */ } }
-  return true;
+  if (schemaReady.has(env)) return true;
+  const pending = schemaPromises.get(env);
+  if (pending) return pending;
+  const initialization = (async () => {
+    await db.batch([
+      db.prepare("CREATE TABLE IF NOT EXISTS racing_paper_positions (id TEXT PRIMARY KEY, runner_id TEXT NOT NULL, runner TEXT NOT NULL, venue TEXT NOT NULL, odds REAL NOT NULL, probability REAL NOT NULL, stake REAL NOT NULL, status TEXT NOT NULL, outcome TEXT, pnl REAL, created_at TEXT NOT NULL)"),
+      db.prepare("CREATE TABLE IF NOT EXISTS racing_decision_snapshots (id TEXT PRIMARY KEY, runner_id TEXT NOT NULL, runner TEXT NOT NULL, venue TEXT NOT NULL, odds REAL NOT NULL, model_probability REAL NOT NULL, market_probability REAL, data_quality REAL, quote_age_seconds REAL, model_version TEXT NOT NULL, decision_json TEXT NOT NULL, close_odds REAL, outcome TEXT, created_at TEXT NOT NULL)"),
+      db.prepare("CREATE TABLE IF NOT EXISTS racing_quote_snapshots (id TEXT PRIMARY KEY, race_id TEXT NOT NULL, provider TEXT NOT NULL, captured_at TEXT NOT NULL, source_updated_at TEXT, complete_book INTEGER NOT NULL, content_json TEXT NOT NULL, created_at TEXT NOT NULL, venue TEXT, scheduled_off_at TEXT)"),
+      db.prepare("CREATE TABLE IF NOT EXISTS racing_research_notes (id TEXT PRIMARY KEY, race_id TEXT NOT NULL, runner_id TEXT, note TEXT NOT NULL, created_at TEXT NOT NULL)"),
+      db.prepare("CREATE TABLE IF NOT EXISTS racing_saved_filters (id TEXT PRIMARY KEY, name TEXT NOT NULL, filter_json TEXT NOT NULL, created_at TEXT NOT NULL)"),
+      db.prepare("CREATE TABLE IF NOT EXISTS racing_alerts (id TEXT PRIMARY KEY, kind TEXT NOT NULL, title TEXT NOT NULL, message TEXT NOT NULL, status TEXT NOT NULL, created_at TEXT NOT NULL)"),
+      db.prepare("CREATE TABLE IF NOT EXISTS racing_provider_health (id TEXT PRIMARY KEY, provider TEXT NOT NULL, status TEXT NOT NULL, latency_ms REAL, message TEXT, checked_at TEXT NOT NULL)"),
+      db.prepare("CREATE TABLE IF NOT EXISTS racing_import_jobs (id TEXT PRIMARY KEY, kind TEXT NOT NULL, accepted INTEGER NOT NULL, rejected INTEGER NOT NULL, errors_json TEXT NOT NULL, created_at TEXT NOT NULL)"),
+      db.prepare("CREATE TABLE IF NOT EXISTS racing_results (id TEXT PRIMARY KEY, race_id TEXT NOT NULL, result_json TEXT NOT NULL, captured_at TEXT NOT NULL)"),
+      db.prepare("CREATE TABLE IF NOT EXISTS racing_watchlist (race_id TEXT PRIMARY KEY, label TEXT, active INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)"),
+      db.prepare("CREATE TABLE IF NOT EXISTS racing_visitor_watchlist (visitor_id TEXT NOT NULL, race_id TEXT NOT NULL, label TEXT, active INTEGER NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY (visitor_id, race_id))"),
+      db.prepare("CREATE TABLE IF NOT EXISTS racing_race_lifecycle (race_id TEXT PRIMARY KEY, status TEXT NOT NULL, reason TEXT, updated_at TEXT NOT NULL)"),
+      db.prepare("CREATE TABLE IF NOT EXISTS racing_settings (key TEXT PRIMARY KEY, value_json TEXT NOT NULL, updated_at TEXT NOT NULL)"),
+    ]);
+    try { await db.prepare("ALTER TABLE racing_paper_positions ADD COLUMN snapshot_id TEXT").run(); } catch { /* column already exists */ }
+    try { await db.prepare("ALTER TABLE racing_paper_positions ADD COLUMN visitor_id TEXT NOT NULL DEFAULT 'anonymous'").run(); } catch { /* column already exists */ }
+    await db.batch([
+      db.prepare("CREATE INDEX IF NOT EXISTS idx_racing_paper_positions_visitor_created ON racing_paper_positions(visitor_id, created_at)"),
+      db.prepare("CREATE INDEX IF NOT EXISTS idx_racing_quotes_race_captured ON racing_quote_snapshots(race_id, captured_at)"),
+    ]);
+    for (const statement of [
+      "ALTER TABLE racing_quote_snapshots ADD COLUMN venue TEXT",
+      "ALTER TABLE racing_quote_snapshots ADD COLUMN scheduled_off_at TEXT",
+      "ALTER TABLE racing_paper_positions ADD COLUMN race_id TEXT",
+      "ALTER TABLE racing_paper_positions ADD COLUMN segment TEXT",
+      "ALTER TABLE racing_paper_positions ADD COLUMN close_odds REAL",
+      "ALTER TABLE racing_paper_positions ADD COLUMN commission REAL DEFAULT 0.2",
+      "ALTER TABLE racing_paper_positions ADD COLUMN data_quality REAL",
+      "ALTER TABLE racing_paper_positions ADD COLUMN slippage REAL",
+    ]) { try { await db.prepare(statement).run(); } catch { /* column already exists */ } }
+    for (const statement of [
+      "ALTER TABLE racing_decision_snapshots ADD COLUMN data_cutoff_at TEXT",
+      "ALTER TABLE racing_decision_snapshots ADD COLUMN provenance_json TEXT",
+    ]) { try { await db.prepare(statement).run(); } catch { /* column already exists */ } }
+    schemaReady.add(env);
+    return true;
+  })().catch((error) => {
+    schemaPromises.delete(env);
+    throw error;
+  });
+  schemaPromises.set(env, initialization);
+  return initialization;
 }
 
 function createServerSnapshot(runnerId) {
@@ -1055,8 +1068,7 @@ async function api(request, env) {
     const regions = (url.searchParams.get("regions") || "gb,ire").split(",").filter(Boolean);
     const startedAt = Date.now();
     const days = requestedFixtureDays(url);
-    const dayResults = [];
-    for (const day of days) dayResults.push(await racingFixtureDay(env, day, regions));
+    const dayResults = await Promise.all(days.map((day) => racingFixtureDay(env, day, regions)));
     const successes = dayResults.filter((result) => !(result.payload instanceof Response));
     const failures = dayResults.filter((result) => result.payload instanceof Response);
     if (!successes.length) {
@@ -1086,41 +1098,55 @@ async function api(request, env) {
       seen.add(key);
       uniqueRecords.push(record);
     }
-    for (const record of uniqueRecords) {
-      let fixture = record.fixture;
-      const activeRunners = fixture.runners.filter((runner) => !["WITHDRAWN", "NON_RUNNER", "NR"].includes(String(runner.status || "").toUpperCase()));
-      const complete = record.oddsAvailable && activeRunners.length >= 2 && activeRunners.every((runner) => Number(runner.odds) > 1);
-      const existingQuotes = await listQuoteSnapshots(env, fixture.providerRaceId);
-      const reusableQuotes = existingQuotes.filter((quote) => quoteAgeSeconds(quote.capturedAt, now()) <= Number(settings.maxQuoteAgeSeconds || 300));
-      const existingQuote = reusableQuotes.find((quote) => quote.provider === "irishracing.com") || reusableQuotes.find((quote) => quote.provider === "the-racing-api") || null;
-      if (existingQuote) {
-        fixture = mergeQuoteIntoFixture(fixture, existingQuote);
-        fixture.quoteCapturedAt = existingQuote.capturedAt;
-        fixture.quoteAgeSeconds = quoteAgeSeconds(existingQuote.capturedAt, now());
-        fixture.quoteSourceUpdatedAt = existingQuote.sourceUpdatedAt;
-        fixture.paperDecision = decisionFromQuote(existingQuote, settings, null, fixture);
-        fixture.decisionContract = fixture.paperDecision;
-        record.oddsAvailable = true;
-        await saveDecisionSnapshot(env, fixture.paperDecision);
-        record.fixture = fixture;
-      } else if (complete) {
-        const capturedAt = now();
-        const sourceUpdatedAt = activeRunners.map((runner) => runner.oddsUpdatedAt).find(Boolean) || capturedAt;
-        const saved = await saveQuoteSnapshot(env, { raceId: fixture.providerRaceId, venue: fixture.venue, scheduledOffAt: fixture.scheduledOffAt, provider: "the-racing-api", capturedAt, sourceUpdatedAt, runners: fixture.runners.map((runner) => ({ runnerId: runner.providerRunnerId, odds: runner.odds, horseName: runner.horseName, status: runner.status, modelProbability: runner.modelProbability, oddsBookmaker: runner.oddsBookmaker, oddsUpdatedAt: runner.oddsUpdatedAt })) });
-        if (saved.ok) {
-          fixture.quoteCapturedAt = capturedAt;
-          fixture.quoteAgeSeconds = quoteAgeSeconds(capturedAt, now());
-          fixture.quoteSourceUpdatedAt = sourceUpdatedAt;
-          fixture.paperDecision = decisionFromQuote(saved.snapshot, settings, null, fixture);
-          fixture.decisionContract = fixture.paperDecision;
-          await saveDecisionSnapshot(env, fixture.paperDecision);
-        }
-      }
-      if (!fixture.paperDecision) {
-        fixture.paperDecision = blockedLiveDecision(settings, record.oddsAvailable ? "NO_COMPLETE_RUNNER_BOOK" : "ODDS_UNAVAILABLE");
-        fixture.decisionContract = fixture.paperDecision;
-      }
+    const storedQuotes = await listQuoteSnapshots(env);
+    const quotesByRace = new Map();
+    for (const quote of storedQuotes) {
+      const key = String(quote.raceId);
+      if (!quotesByRace.has(key)) quotesByRace.set(key, []);
+      quotesByRace.get(key).push(quote);
     }
+    let recordCursor = 0;
+    const enrichRecord = async () => {
+      while (true) {
+        const currentIndex = recordCursor++;
+        const record = uniqueRecords[currentIndex];
+        if (!record) return;
+        let fixture = record.fixture;
+        const activeRunners = fixture.runners.filter((runner) => !["WITHDRAWN", "NON_RUNNER", "NR"].includes(String(runner.status || "").toUpperCase()));
+        const complete = record.oddsAvailable && activeRunners.length >= 2 && activeRunners.every((runner) => Number(runner.odds) > 1);
+        const existingQuotes = quotesByRace.get(String(fixture.providerRaceId)) || [];
+        const reusableQuotes = existingQuotes.filter((quote) => quoteAgeSeconds(quote.capturedAt, now()) <= Number(settings.maxQuoteAgeSeconds || 300));
+        const existingQuote = reusableQuotes.find((quote) => quote.provider === "irishracing.com") || reusableQuotes.find((quote) => quote.provider === "the-racing-api") || null;
+        if (existingQuote) {
+          fixture = mergeQuoteIntoFixture(fixture, existingQuote);
+          fixture.quoteCapturedAt = existingQuote.capturedAt;
+          fixture.quoteAgeSeconds = quoteAgeSeconds(existingQuote.capturedAt, now());
+          fixture.quoteSourceUpdatedAt = existingQuote.sourceUpdatedAt;
+          fixture.paperDecision = decisionFromQuote(existingQuote, settings, null, fixture);
+          fixture.decisionContract = fixture.paperDecision;
+          record.oddsAvailable = true;
+          await saveDecisionSnapshot(env, fixture.paperDecision);
+        } else if (complete) {
+          const capturedAt = now();
+          const sourceUpdatedAt = activeRunners.map((runner) => runner.oddsUpdatedAt).find(Boolean) || capturedAt;
+          const saved = await saveQuoteSnapshot(env, { raceId: fixture.providerRaceId, venue: fixture.venue, scheduledOffAt: fixture.scheduledOffAt, provider: "the-racing-api", capturedAt, sourceUpdatedAt, runners: fixture.runners.map((runner) => ({ runnerId: runner.providerRunnerId, odds: runner.odds, horseName: runner.horseName, status: runner.status, modelProbability: runner.modelProbability, oddsBookmaker: runner.oddsBookmaker, oddsUpdatedAt: runner.oddsUpdatedAt })) });
+          if (saved.ok) {
+            fixture.quoteCapturedAt = capturedAt;
+            fixture.quoteAgeSeconds = quoteAgeSeconds(capturedAt, now());
+            fixture.quoteSourceUpdatedAt = sourceUpdatedAt;
+            fixture.paperDecision = decisionFromQuote(saved.snapshot, settings, null, fixture);
+            fixture.decisionContract = fixture.paperDecision;
+            await saveDecisionSnapshot(env, fixture.paperDecision);
+          }
+        }
+        if (!fixture.paperDecision) {
+          fixture.paperDecision = blockedLiveDecision(settings, record.oddsAvailable ? "NO_COMPLETE_RUNNER_BOOK" : "ODDS_UNAVAILABLE");
+          fixture.decisionContract = fixture.paperDecision;
+        }
+        record.fixture = fixture;
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(8, uniqueRecords.length) }, () => enrichRecord()));
     const fixtures = uniqueRecords.map((record) => record.fixture);
     const completeBooks = uniqueRecords.filter((record) => {
       const fixture = record.fixture;
